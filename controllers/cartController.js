@@ -3,7 +3,11 @@ const User = require("../models/User");
 // Get cart items for a user
 const getCart = async (req, res) => {
   try {
-    const cart_items = await User.find({ user_id: "1" });
+    const userId = req.auth?.userId;
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    const cart_items = await User.find({ user_id: userId });
     const { cart } = cart_items[0];
     return res.status(200).json({ cart });
   } catch (error) {
@@ -21,8 +25,10 @@ const getCart = async (req, res) => {
 const updateCart = async (req, res) => {
   try {
     const { action, product, id, quantity } = req.body;
-
-    const userId = "1"; // You can replace this with a dynamic user ID if needed
+    const userId = req.auth?.userId;
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
     const cart_doc = await User.findOne({ user_id: userId });
 
     switch (action) {

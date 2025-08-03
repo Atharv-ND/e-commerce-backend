@@ -1,6 +1,8 @@
 const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
+const { ClerkExpressWithAuth } = require("@clerk/clerk-express");
+
 require("dotenv").config();
 
 const app = express();
@@ -10,15 +12,11 @@ app.use(express.json());
 // Routes
 app.use("/api/products", require("./routes/productRoutes"));
 app.use("/api/cart", require("./routes/cartRoutes"));
-
-// Connect to MongoDB and start server
-
-const { preloadProducts } = require("./controllers/productController");
+app.use(ClerkExpressWithAuth());
 
 mongoose
   .connect(process.env.MONGO_URI)
-  .then(async () => {
-    await preloadProducts();
+  .then(() => {
     app.listen(process.env.PORT, () =>
       console.log(`Server running on port ${process.env.PORT}`)
     );
