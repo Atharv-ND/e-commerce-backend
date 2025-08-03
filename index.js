@@ -1,7 +1,7 @@
 const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
-const { ClerkExpressWithAuth } = require("@clerk/express");
+const { requireAuth } = require("@clerk/express");
 
 require("dotenv").config();
 
@@ -12,7 +12,7 @@ app.use(express.json());
 // Routes
 app.use("/api/products", require("./routes/productRoutes"));
 app.use("/api/cart", require("./routes/cartRoutes"));
-app.use(ClerkExpressWithAuth());
+app.use(requireAuth());
 
 mongoose
   .connect(process.env.MONGO_URI)
