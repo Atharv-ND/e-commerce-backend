@@ -16,6 +16,11 @@ const productSchema = new mongoose.Schema({
   colours: { type: [String], default: [] }, // e.g. ["Black", "White"]
 });
 
+productSchema.index({ popular: 1 });
+productSchema.index({ product_id: 1 }); // unique already defined
+productSchema.index({ category: 1 });
+productSchema.index({ price: 1 });
+productSchema.index({ features: 1 });
 const Product = mongoose.model("Product", productSchema);
 
 module.exports = Product;
