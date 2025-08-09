@@ -17,7 +17,6 @@ const productSchema = new mongoose.Schema({
 });
 
 productSchema.index({ popular: 1 });
-productSchema.index({ product_id: 1 }); // unique already defined
 productSchema.index({ category: 1 });
 productSchema.index({ price: 1 });
 productSchema.index({ features: 1 });
