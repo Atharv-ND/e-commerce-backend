@@ -1,4 +1,5 @@
 const Product = require("../models/Product");
+const redis = require("../utils/redisClient"); // make sure this file exports your Redis connection
 
 const getProducts = async (req, res) => {
   try {
@@ -15,7 +16,6 @@ const getProducts = async (req, res) => {
         // ✅ Build MongoDB filter object
         const filter = {};
 
-        // If search matches brand, category, or feature directly
         if (search) {
           filter.$or = [
             { brand: search },
@@ -36,33 +36,71 @@ const getProducts = async (req, res) => {
 
         if (feature) filter.features = feature;
 
-        // ✅ Count before pagination
-        const totalCount = await Product.countDocuments(filter);
+        // ✅ Create cache key from filters
+        const cacheKey = `products:${JSON.stringify({
+          search,
+          brand,
+          category,
+          price,
+          feature,
+          page: currentPage,
+          limit: perPage,
+        })}`;
 
-        // ✅ Fetch paginated products
+        const cached = await redis.get(cacheKey);
+        if (cached) {
+          return res.status(200).json(JSON.parse(cached));
+        }
+
+        const totalCount = await Product.countDocuments(filter);
         const products = await Product.find(filter)
           .skip(skip)
           .limit(perPage)
           .lean();
 
-        return res.status(200).json({
+        const responseData = {
           products,
           totalCount,
           currentPage,
           totalPages: Math.ceil(totalCount / perPage),
-        });
+        };
+
+        await redis.set(cacheKey, JSON.stringify(responseData), { EX: 3600 }); // 1 hour
+        return res.status(200).json(responseData);
       }
 
       case "findProduct": {
         if (!id) {
           return res.status(400).json({ message: "Product ID is required." });
         }
-        const product = await Product.findOne({ product_id: id });
 
+        const cacheKey = `product:${id}`;
+        const cached = await redis.get(cacheKey);
+        if (cached) {
+          return res.status(200).json(JSON.parse(cached));
+        }
+
+        const product = await Product.findOne({ product_id: id });
         if (!product) {
           return res.status(404).json({ message: "Product not found." });
         }
+
+        await redis.set(cacheKey, JSON.stringify({ product }), { EX: 3600 });
         return res.status(200).json({ product });
+      }
+
+      case "getPopular": {
+        const cacheKey = "popular-products";
+
+        const cached = await redis.get(cacheKey);
+        if (cached) {
+          return res.status(200).json(JSON.parse(cached));
+        }
+
+        const products = await Product.find({ popular: "yes" }).lean();
+
+        await redis.set(cacheKey, JSON.stringify(products), { EX: 3600 });
+        return res.status(200).json(products);
       }
 
       default:
