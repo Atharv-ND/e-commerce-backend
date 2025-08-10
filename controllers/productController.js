@@ -1,5 +1,5 @@
 const Product = require("../models/Product");
-const redis = require("../utils/redisClient"); // make sure this file exports your Redis connection
+const redisFetch = require("../utils/redisClient"); // REST API helper
 
 const getProducts = async (req, res) => {
   try {
@@ -8,14 +8,11 @@ const getProducts = async (req, res) => {
 
     switch (action) {
       case "getProducts": {
-        // ✅ Pagination defaults
         const currentPage = parseInt(page) > 0 ? parseInt(page) : 1;
         const perPage = parseInt(limit) > 0 ? parseInt(limit) : 20;
         const skip = (currentPage - 1) * perPage;
 
-        // ✅ Build MongoDB filter object
         const filter = {};
-
         if (search) {
           filter.$or = [
             { brand: search },
@@ -23,7 +20,6 @@ const getProducts = async (req, res) => {
             { features: search },
           ];
         }
-
         if (brand) filter.brand = brand;
         if (category) filter.category = category;
 
@@ -33,10 +29,8 @@ const getProducts = async (req, res) => {
             filter.price = { $gte: 25000, $lt: 50000 };
           else if (price === "Above 50000") filter.price = { $gte: 50000 };
         }
-
         if (feature) filter.features = feature;
 
-        // ✅ Create cache key from filters
         const cacheKey = `products:${JSON.stringify({
           search,
           brand,
@@ -47,9 +41,9 @@ const getProducts = async (req, res) => {
           limit: perPage,
         })}`;
 
-        const cached = await redis.get(cacheKey);
-        if (cached) {
-          return res.status(200).json(JSON.parse(cached));
+        const cached = await redisFetch("get", cacheKey);
+        if (cached.result) {
+          return res.status(200).json(JSON.parse(cached.result));
         }
 
         const totalCount = await Product.countDocuments(filter);
@@ -65,7 +59,8 @@ const getProducts = async (req, res) => {
           totalPages: Math.ceil(totalCount / perPage),
         };
 
-        await redis.set(cacheKey, JSON.stringify(responseData), { EX: 3600 }); // 1 hour
+        await redisFetch("set", cacheKey, JSON.stringify(responseData));
+        await redisFetch("expire", cacheKey, 3600);
         return res.status(200).json(responseData);
       }
 
@@ -75,9 +70,9 @@ const getProducts = async (req, res) => {
         }
 
         const cacheKey = `product:${id}`;
-        const cached = await redis.get(cacheKey);
-        if (cached) {
-          return res.status(200).json(JSON.parse(cached));
+        const cached = await redisFetch("get", cacheKey);
+        if (cached.result) {
+          return res.status(200).json(JSON.parse(cached.result));
         }
 
         const product = await Product.findOne({ product_id: id });
@@ -85,21 +80,22 @@ const getProducts = async (req, res) => {
           return res.status(404).json({ message: "Product not found." });
         }
 
-        await redis.set(cacheKey, JSON.stringify({ product }), { EX: 3600 });
+        await redisFetch("set", cacheKey, JSON.stringify({ product }));
+        await redisFetch("expire", cacheKey, 3600);
         return res.status(200).json({ product });
       }
 
       case "getPopular": {
         const cacheKey = "popular-products";
-
-        const cached = await redis.get(cacheKey);
-        if (cached) {
-          return res.status(200).json(JSON.parse(cached));
+        const cached = await redisFetch("get", cacheKey);
+        if (cached.result) {
+          return res.status(200).json(JSON.parse(cached.result));
         }
 
         const products = await Product.find({ popular: "yes" }).lean();
 
-        await redis.set(cacheKey, JSON.stringify(products), { EX: 3600 });
+        await redisFetch("set", cacheKey, JSON.stringify(products));
+        await redisFetch("expire", cacheKey, 3600);
         return res.status(200).json(products);
       }
 
@@ -115,6 +111,4 @@ const getProducts = async (req, res) => {
   }
 };
 
-module.exports = {
-  getProducts,
-};
+module.exports = { getProducts };

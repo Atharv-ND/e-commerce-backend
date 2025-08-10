@@ -1,22 +1,16 @@
-// utils/redisClient.js  OR  config/redisClient.js
-const { createClient } = require("redis");
+require("dotenv").config();
+const fetch = require("node-fetch");
 
-// Create Redis client using Upstash URL from environment variables
-const client = createClient({
-  url: process.env.REDIS_URL, // e.g. "rediss://<username>:<password>@<endpoint>"
-});
+async function redisFetch(command, ...args) {
+  const url = `${process.env.UPSTASH_REDIS_REST_URL}/${command}/${args.join(
+    "/"
+  )}`;
+  const res = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${process.env.UPSTASH_REDIS_REST_TOKEN}`,
+    },
+  });
+  return res.json();
+}
 
-client.on("error", (err) => {
-  console.error("❌ Redis Client Error:", err);
-});
-
-(async () => {
-  try {
-    await client.connect();
-    console.log("✅ Connected to Upstash Redis");
-  } catch (err) {
-    console.error("❌ Failed to connect to Redis:", err);
-  }
-})();
-
-module.exports = client;
+module.exports = redisFetch;
