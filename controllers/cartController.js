@@ -1,4 +1,5 @@
 const User = require("../models/User");
+const redis = require("../utils/redisClient"); // your Redis client instance
 
 // Get cart items for a user
 const getCart = async (req, res) => {
@@ -7,17 +8,29 @@ const getCart = async (req, res) => {
     if (!userId) {
       return res.status(401).json({ message: "Unauthorized" });
     }
-    const cart_items = await User.find({ user_id: userId });
-    const { cart } = cart_items[0];
+
+    const cacheKey = `cart-${userId}`;
+    const cachedCart = await redis.get(cacheKey);
+    if (cachedCart) {
+      return res.status(200).json({ cart: JSON.parse(cachedCart) });
+    }
+
+    const cartDoc = await User.findOne({ user_id: userId })
+      .select("cart")
+      .lean();
+
+    const cart = cartDoc ? cartDoc.cart : [];
+
+    // Cache cart in Redis for 5 minutes (300 seconds)
+    await redis.set(cacheKey, JSON.stringify(cart), { EX: 300 });
+
     return res.status(200).json({ cart });
   } catch (error) {
     console.log(error);
-    return res
-      .status(500)
-      .json({
-        message: "Failed to fetch products",
-        error: error instanceof Error ? error.message : error,
-      });
+    return res.status(500).json({
+      message: "Failed to fetch cart",
+      error: error instanceof Error ? error.message : error,
+    });
   }
 };
 
@@ -29,7 +42,10 @@ const updateCart = async (req, res) => {
     if (!userId) {
       return res.status(401).json({ message: "Unauthorized" });
     }
-    const cart_doc = await User.findOne({ user_id: userId });
+
+    const cacheKey = `cart-${userId}`;
+
+    const cartDoc = await User.findOne({ user_id: userId });
 
     switch (action) {
       case "addToCart": {
@@ -37,8 +53,7 @@ const updateCart = async (req, res) => {
           return res.status(400).json({ message: "Product is required." });
         }
 
-        if (!cart_doc) {
-          // No cart exists → create one
+        if (!cartDoc) {
           await User.create({
             user_id: userId,
             cart: [
@@ -54,7 +69,7 @@ const updateCart = async (req, res) => {
             ],
           });
         } else {
-          const exists = cart_doc.cart.some(
+          const exists = cartDoc.cart.some(
             (item) => item.product_id === product.product_id
           );
 
@@ -75,7 +90,7 @@ const updateCart = async (req, res) => {
             );
           }
         }
-        return res.status(200).json({ message: "Updating done" });
+        break;
       }
 
       case "removeFromCart": {
@@ -83,48 +98,53 @@ const updateCart = async (req, res) => {
           return res.status(400).json({ message: "Product ID is required." });
         }
 
-        if (cart_doc) {
+        if (cartDoc) {
           await User.findOneAndUpdate(
             { user_id: userId },
             { $pull: { cart: { product_id: id } } }
           );
         }
-        return res.status(200).json({ message: "Updating done" });
+        break;
       }
 
       case "updateQuantity": {
         if (!id || quantity === undefined) {
-          return res.status(400).json({ message: "Product ID and quantity are required." });
+          return res
+            .status(400)
+            .json({ message: "Product ID and quantity are required." });
         }
 
-        if (cart_doc) {
+        if (cartDoc) {
           await User.updateOne(
             { user_id: userId, "cart.product_id": id },
             { $set: { "cart.$.quantity": quantity } }
           );
         }
-        return res.status(200).json({ message: "Updating done" });
+        break;
       }
 
       case "clearCart": {
-        if (cart_doc) {
+        if (cartDoc) {
           await User.findOneAndUpdate({ user_id: userId }, { cart: [] });
         }
-        return res.status(200).json({ message: "Updating done" });
+        break;
       }
 
       default: {
         return res.status(400).json({ message: "Invalid action" });
       }
     }
+
+    // Invalidate Redis cache on cart update
+    await redis.del(cacheKey);
+
+    return res.status(200).json({ message: "Cart updated successfully" });
   } catch (error) {
     console.log(error);
-    return res
-      .status(500)
-      .json({
-        message: "Failed to process request",
-        error: error instanceof Error ? error.message : error,
-      });
+    return res.status(500).json({
+      message: "Failed to process cart update",
+      error: error instanceof Error ? error.message : error,
+    });
   }
 };
 
